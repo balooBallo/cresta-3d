@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#12151b">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Cresta 3D</title>
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="map"></div>
+
+<div id="top">
+  <input id="q" type="search" placeholder="Cerca luogo o lat, lon…" autocomplete="off">
+  <div id="results"></div>
+</div>
+<div id="netBadge" hidden>offline</div>
+<div id="dateBadge" hidden></div>
+
+<div id="drawbar" class="floatbar" hidden>
+  <button id="dUndo">↶ Annulla</button>
+  <button id="dClear">Cancella</button>
+  <button id="dDone" class="on">✔ Fine</button>
+</div>
+<div id="recbar" class="floatbar rec" hidden>
+  <span>⏺ <b id="recInfo">0 m</b></span>
+  <button id="recStop">■ Stop e salva</button>
+</div>
+
+<div id="profile" hidden>
+  <div id="pHead"><div id="pStats"></div><button id="pToggle" aria-label="Profilo">▾</button></div>
+  <canvas id="pc"></canvas>
+</div>
+
+<div id="sheet" hidden>
+  <div class="sheetHead"><b id="sheetTitle"></b><button id="sheetClose" aria-label="Chiudi">✕</button></div>
+  <div class="sheetBody">
+
+    <!-- ================= MAPPE ================= -->
+    <section data-p="maps" data-title="Mappe">
+      <h3>Immagine di base</h3>
+      <div class="radios" id="baseList">
+        <label><input type="radio" name="base" value="esri"> <span><b>Esri World Imagery</b><small>Alta risoluzione (~0,5 m), quasi sempre estiva</small></span></label>
+        <label><input type="radio" name="base" value="wayback"> <span><b>Esri Wayback</b><small>Archivio storico: sfoglia le versioni per trovare riprese invernali</small></span></label>
+        <label><input type="radio" name="base" value="s2"> <span><b>Sentinel-2 invernale</b><small>Neve reale, data a scelta, 10 m/pixel</small></span></label>
+        <label><input type="radio" name="base" value="topo"> <span><b>OpenTopoMap</b><small>Carta topografica</small></span></label>
+      </div>
+
+      <div id="waybackBox" class="box" hidden>
+        <div class="row">
+          <button id="wbPrev" title="Più recente">◀</button>
+          <select id="wbSel" style="flex:1"><option>Caricamento…</option></select>
+          <button id="wbNext" title="Più vecchia">▶</button>
+        </div>
+        <p class="muted">Ogni versione può avere riprese diverse per la tua zona. Scorri finché non trovi la neve: la versione scelta è anche quella che viene scaricata offline.</p>
+      </div>
+
+      <div id="s2Box" class="box" hidden>
+        <label class="col">ID istanza Copernicus (Sentinel Hub)<input id="s2Inst" type="text" placeholder="es. 1a2b3c4d-…"></label>
+        <label class="col">Layer<input id="s2Layer" type="text" placeholder="TRUE_COLOR"></label>
+        <div class="row">
+          <label class="col" style="flex:1">Dal<input id="s2From" type="date"></label>
+          <label class="col" style="flex:1">Al<input id="s2To" type="date"></label>
+        </div>
+        <div class="row"><span class="muted" style="width:120px">Nuvole max</span><input id="s2cc" type="range" min="0" max="100" step="5" style="flex:1"><span id="s2ccV" class="muted"></span></div>
+        <button id="s2Apply" class="on" style="width:100%">Applica</button>
+        <p class="muted">Account gratuito su dataspace.copernicus.eu → Sentinel Hub → Configuration Utility → nuova configurazione con layer “True Color”. Copia qui l'ID. Il piano gratuito ha un limite mensile di richieste: usalo per scaricare le zone, non per navigare a lungo.</p>
+      </div>
+
+      <h3>Ortofoto nazionali <small class="muted">(sopra Esri)</small></h3>
+      <label class="chk"><input type="checkbox" id="oCH"> Svizzera · SWISSIMAGE (10 cm)</label>
+      <label class="chk"><input type="checkbox" id="oFR"> Francia · IGN (20 cm)</label>
+
+      <h3>Sovrapposizioni</h3>
+      <label class="chk"><input type="checkbox" data-x="labels"> Nomi e confini</label>
+      <label class="chk"><input type="checkbox" data-x="skiCH"> Itinerari scialpinismo · swisstopo</label>
+      <label class="chk"><input type="checkbox" data-x="skiFR"> Itinerari scialpinismo · IGN</label>
+      <label class="chk"><input type="checkbox" data-x="pistes"> Piste da sci</label>
+      <label class="chk"><input type="checkbox" data-x="hiking"> Sentieri escursionistici</label>
+    </section>
+
+    <!-- ================= TERRENO ================= -->
+    <section data-p="terrain" data-title="Terreno e pendii">
+      <label class="chk"><input type="checkbox" id="t3d"> Rilievo 3D</label>
+      <div class="row"><span class="muted" style="width:110px">Esagerazione</span><input type="range" id="exag" min="1" max="2.5" step="0.1" style="flex:1"><span id="exagV" class="muted"></span></div>
+      <label class="chk"><input type="checkbox" id="tHill"> Ombreggiatura del rilievo</label>
+
+      <h3>Analisi del pendio</h3>
+      <div class="seg" id="ovSeg">
+        <button data-o="none">Nessuna</button>
+        <button data-o="slope">Pendenza</button>
+        <button data-o="aspect">Esposizione</button>
+      </div>
+      <div class="row" style="margin-top:8px"><span class="muted" style="width:110px">Opacità</span><input type="range" id="ovOp" min="0.1" max="1" step="0.05" style="flex:1"></div>
+      <div id="legend" class="legend"></div>
+      <p class="muted">Calcolata dal modello del terreno Mapterhorn (LiDAR fino a ~1 m dove disponibile). Visibile da zoom 10, funziona anche offline sulle zone scaricate. Non sostituisce il bollettino valanghe.</p>
+      <p class="muted">Tocca la mappa per leggere quota, pendenza ed esposizione di un punto.</p>
+    </section>
+
+    <!-- ================= TRACCIA ================= -->
+    <section data-p="route" data-title="Percorso">
+      <div class="grid2">
+        <button id="bDraw">✏️ Traccia sulla mappa</button>
+        <button id="bRec">⏺ Registra GPS</button>
+        <label class="btn">📂 Importa GPX<input type="file" id="fGpx" accept=".gpx,application/gpx+xml,application/xml,text/xml" hidden></label>
+        <button id="bExport">💾 Esporta GPX</button>
+      </div>
+      <div id="stats" class="stats"></div>
+      <div class="row" style="margin-top:10px">
+        <input id="rName" type="text" placeholder="Nome del percorso" style="flex:1">
+        <button id="bSave" class="on">Salva</button>
+      </div>
+      <p class="muted">In modalità traccia: tocca per aggiungere punti, trascina un punto per spostarlo. Dopo il salvataggio puoi scaricare la zona per l'offline dalla scheda Percorsi.</p>
+    </section>
+
+    <!-- ================= PERCORSI ================= -->
+    <section data-p="saved" data-title="Percorsi salvati">
+      <div id="savedList"></div>
+    </section>
+
+    <!-- ================= OFFLINE ================= -->
+    <section data-p="offline" data-title="Mappe offline">
+      <div id="storageInfo" class="muted"></div>
+      <h3>Qualità del download</h3>
+      <label class="col">Immagini
+        <select id="imgMax">
+          <option value="16">Media · ~1,7 m/pixel</option>
+          <option value="17">Alta · ~0,8 m/pixel</option>
+          <option value="18">Massima · ~0,4 m/pixel (pesante)</option>
+        </select>
+      </label>
+      <label class="col">Terreno 3D
+        <select id="demMax">
+          <option value="14">Standard · ~3 m</option>
+          <option value="15">Alto · ~1,6 m</option>
+          <option value="16">Massimo · ~0,8 m (dove c'è LiDAR)</option>
+        </select>
+      </label>
+      <label class="col">Fascia attorno al percorso
+        <select id="bufM">
+          <option value="500">± 500 m</option>
+          <option value="1000">± 1 km</option>
+          <option value="2000">± 2 km</option>
+          <option value="4000">± 4 km</option>
+        </select>
+      </label>
+      <p class="muted">Vengono scaricati la base attiva, le ortofoto e le sovrapposizioni accese, più il terreno 3D. Pendenza ed esposizione sono calcolate dal terreno, quindi funzionano offline.</p>
+      <div class="grid2">
+        <button id="planRoute">⬇ Zona del percorso</button>
+        <button id="planView">⬇ Vista attuale</button>
+      </div>
+      <div id="dlBox" class="box" hidden>
+        <div id="dlInfo"></div>
+        <div class="bar"><div id="dlBar"></div></div>
+        <div class="row" style="margin-top:8px">
+          <input id="dlName" type="text" placeholder="Nome della zona" style="flex:1">
+          <button id="dlGo" class="on">Scarica</button>
+          <button id="dlCancel">Annulla</button>
+        </div>
+      </div>
+      <h3>Zone scaricate</h3>
+      <label class="chk"><input type="checkbox" id="showPacks" checked> Mostra i contorni sulla mappa</label>
+      <div id="packList"></div>
+    </section>
+  </div>
+</div>
+
+<nav id="nav">
+  <button data-p="maps"><i>🗺</i><span>Mappe</span></button>
+  <button data-p="terrain"><i>⛰</i><span>Pendii</span></button>
+  <button data-p="route"><i>✏️</i><span>Traccia</span></button>
+  <button data-p="saved"><i>📁</i><span>Percorsi</span></button>
+  <button data-p="offline"><i>⬇</i><span>Offline</span></button>
+</nav>
+
+<div id="toast"></div>
+
+<script src="vendor/maplibre-gl.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
